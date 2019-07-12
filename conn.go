@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -265,14 +266,100 @@ func Open(dsn string) (_ driver.Conn, err error) {
 	return DialOpen(defaultDialer{}, dsn)
 }
 
-// DialOpen opens a new connection to the database using a dialer.
-func DialOpen(d Dialer, dsn string) (_ driver.Conn, err error) {
+func singleDialOpen(d Dialer, dsn string) (_ *conn, err error) {
 	c, err := NewConnector(dsn)
 	if err != nil {
 		return nil, err
 	}
 	c.dialer = d
 	return c.open(context.Background())
+}
+
+// DialOpen opens a new connection to the database using a dialer.
+func DialOpen(d Dialer, dsn string) (_ driver.Conn, err error) {
+	//support multi host
+	singleHostDsns, err := SplitMultiHostUrl(dsn)
+	if err != nil {
+		return nil, err
+	}
+	if len(singleHostDsns) == 1 {
+		return singleDialOpen(d, dsn)
+	} else {
+		resultCh := make(chan driver.Conn)
+		errCh := make(chan bool)
+		wg := sync.WaitGroup{}
+		wg.Add(len(singleHostDsns))
+		errs := make([]error, 0)
+		connected := false
+		lock := sync.Mutex{}
+		go func() {
+			wg.Wait()
+			errCh <- true
+		}()
+		for _, singleDsn := range singleHostDsns {
+			go func() {
+				var connection *conn
+				if ok, singleDsn := HasTargetSessionAttrsReadWriteAttribute(singleDsn); ok {
+					connection, err = singleDialOpen(d, singleDsn)
+					if err != nil {
+						errs = append(errs, err)
+						wg.Done()
+						return
+					}
+					//check target session attribute
+					rows, err := connection.Query("SHOW transaction_read_only;", nil)
+					if err != nil {
+						errs = append(errs, err)
+						wg.Done()
+						_ = connection.Close()
+						return
+					}
+					v := make([]driver.Value, 1)
+					err = rows.Next(v)
+					if err != nil {
+						errs = append(errs, err)
+						wg.Done()
+						_ = connection.Close()
+						return
+					}
+					if !(v[0].(string) == "off") {
+						errs = append(errs, errors.New("transaction read only"))
+						wg.Done()
+						_ = connection.Close()
+						return
+					}
+				} else {
+					connection, err = singleDialOpen(d, singleDsn)
+					if err != nil {
+						errs = append(errs, err)
+						wg.Done()
+						return
+					}
+				}
+				lock.Lock()
+				if connected {
+					_ = connection.Close()
+					fmt.Println("already connected")
+				} else {
+					resultCh <- connection
+					connected = true
+					fmt.Println("connected")
+				}
+				lock.Unlock()
+			}()
+		}
+		select {
+		case <-errCh:
+			errString := "All host failed"
+			for _, e := range errs {
+				errString = errString + "\n" + e.Error()
+			}
+			return nil, errors.New(errString)
+		case connection := <-resultCh:
+			return connection, nil
+		}
+	}
+
 }
 
 func (c *Connector) open(ctx context.Context) (cn *conn, err error) {

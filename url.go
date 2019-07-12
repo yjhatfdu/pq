@@ -74,3 +74,32 @@ func ParseURL(url string) (string, error) {
 	sort.Strings(kvs) // Makes testing easier (not a performance concern)
 	return strings.Join(kvs, " "), nil
 }
+
+func SplitMultiHostUrl(url string) ([]string, error) {
+	u, err := nurl.Parse(url)
+	if err != nil {
+		return nil, err
+	}
+	hosts := strings.Split(u.Host, ",")
+	if len(hosts) == 1 {
+		return []string{url}, nil
+	} else {
+		results := make([]string, len(hosts))
+		for i := range hosts {
+			u.Host = hosts[i]
+			results[i] = u.String()
+		}
+		return results, nil
+	}
+}
+
+func HasTargetSessionAttrsReadWriteAttribute(url string) (bool, string) {
+	u, _ := nurl.Parse(url)
+	if u.Query().Get("target_session_attrs") == "read-write" {
+		q := u.Query()
+		q.Del("target_session_attrs")
+		u.RawQuery = q.Encode()
+		return true, u.String()
+	}
+	return false, url
+}

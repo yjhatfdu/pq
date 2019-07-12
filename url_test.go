@@ -64,3 +64,40 @@ func TestMinimalURL(t *testing.T) {
 		t.Fatalf("expected blank connection string, got: %q", cs)
 	}
 }
+
+func TestMultiHostURL(t *testing.T) {
+	expected := `attr=true dbname=database host=host1,host2 password=top\ secret user=username`
+	str, err := ParseURL("postgres://username:top%20secret@host1,host2/database?attr=true")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if str != expected {
+		t.Fatalf("unexpected result from ParseURL:\n+ %s\n- %s", str, expected)
+	}
+}
+
+func TestSplitMultiHostURL(t *testing.T) {
+	urls, err := SplitMultiHostUrl("postgres://username:top%20secret@host1,host2/database?attr=true")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if urls[0] != "postgres://username:top%20secret@host1/database?attr=true" {
+		t.Fatalf("unexpected result from ParseURL:\n+ %s\n-", urls)
+	}
+	if urls[1] != "postgres://username:top%20secret@host2/database?attr=true" {
+		t.Fatalf("unexpected result from ParseURL:\n+ %s\n-", urls)
+	}
+}
+func TestSplitMultiHostURL2(t *testing.T) {
+	urls, err := SplitMultiHostUrl("postgres://username:top%20secret@host1:5432,host2:5433/database?attr=true")
+	t.Log(urls)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if urls[0] != "postgres://username:top%20secret@host1:5432/database?attr=true" {
+		t.Fatalf("unexpected result from ParseURL:\n+ %s\n-", urls)
+	}
+	if urls[1] != "postgres://username:top%20secret@host2:5433/database?attr=true" {
+		t.Fatalf("unexpected result from ParseURL:\n+ %s\n-", urls)
+	}
+}
