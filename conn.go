@@ -277,18 +277,19 @@ func singleDialOpen(d Dialer, dsn string) (_ *conn, err error) {
 
 // DialOpen opens a new connection to the database using a dialer.
 func DialOpen(d Dialer, dsn string) (_ driver.Conn, err error) {
-	//support multi host
-	singleHostDsns, err := SplitMultiHostUrl(dsn)
+	// support multi host
+	singleHostDSNs, err := SplitMultiHostUrl(dsn)
 	if err != nil {
 		return nil, err
 	}
-	if len(singleHostDsns) == 1 {
+	// just one host
+	if len(singleHostDSNs) == 1 {
 		return singleDialOpen(d, dsn)
 	} else {
 		resultCh := make(chan driver.Conn)
 		errCh := make(chan bool)
 		wg := sync.WaitGroup{}
-		wg.Add(len(singleHostDsns))
+		wg.Add(len(singleHostDSNs))
 		errs := make([]error, 0)
 		connected := false
 		lock := sync.Mutex{}
@@ -296,17 +297,17 @@ func DialOpen(d Dialer, dsn string) (_ driver.Conn, err error) {
 			wg.Wait()
 			errCh <- true
 		}()
-		for _, singleDsn := range singleHostDsns {
+		for _, singleDsn := range singleHostDSNs {
 			go func() {
 				var connection *conn
-				if ok, singleDsn := HasTargetSessionAttrsReadWriteAttribute(singleDsn); ok {
-					connection, err = singleDialOpen(d, singleDsn)
-					if err != nil {
-						errs = append(errs, err)
-						wg.Done()
-						return
-					}
-					//check target session attribute
+				connection, err = singleDialOpen(d, singleDsn)
+				if err != nil {
+					errs = append(errs, err)
+					wg.Done()
+					return
+				}
+				if connection.opts["target_session_attrs"] == "read_write" {
+					// check target session attribute
 					rows, err := connection.Query("SHOW transaction_read_only;", nil)
 					if err != nil {
 						errs = append(errs, err)
@@ -326,13 +327,6 @@ func DialOpen(d Dialer, dsn string) (_ driver.Conn, err error) {
 						errs = append(errs, errors.New("transaction read only"))
 						wg.Done()
 						_ = connection.Close()
-						return
-					}
-				} else {
-					connection, err = singleDialOpen(d, singleDsn)
-					if err != nil {
-						errs = append(errs, err)
-						wg.Done()
 						return
 					}
 				}
@@ -1139,6 +1133,8 @@ func isDriverSetting(key string) bool {
 	case "disable_prepared_binary_result":
 		return true
 	case "binary_parameters":
+		return true
+	case "target_session_attrs":
 		return true
 
 	default:

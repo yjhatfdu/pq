@@ -75,6 +75,9 @@ func ParseURL(url string) (string, error) {
 	return strings.Join(kvs, " "), nil
 }
 
+// SplitMultiHostUrl used to parse multihost dsn into multi dsn
+// example: split "postgres://host1:123,host2:456/somedb?target_session_attrs=any" to
+// []String{"postgres://host1:123/somedb?target_session_attrs=any","postgres://host2:456/somedb?target_session_attrs=any"}
 func SplitMultiHostUrl(url string) ([]string, error) {
 	u, err := nurl.Parse(url)
 	if err != nil {
@@ -91,15 +94,4 @@ func SplitMultiHostUrl(url string) ([]string, error) {
 		}
 		return results, nil
 	}
-}
-
-func HasTargetSessionAttrsReadWriteAttribute(url string) (bool, string) {
-	u, _ := nurl.Parse(url)
-	if u.Query().Get("target_session_attrs") == "read-write" {
-		q := u.Query()
-		q.Del("target_session_attrs")
-		u.RawQuery = q.Encode()
-		return true, u.String()
-	}
-	return false, url
 }
