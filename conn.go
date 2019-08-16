@@ -298,7 +298,7 @@ func DialOpen(d Dialer, dsn string) (_ driver.Conn, err error) {
 			errCh <- true
 		}()
 		for _, singleDsn := range singleHostDSNs {
-			go func() {
+			go func(singleDsn string) {
 				var connection *conn
 				connection, err = singleDialOpen(d, singleDsn)
 				if err != nil {
@@ -306,9 +306,9 @@ func DialOpen(d Dialer, dsn string) (_ driver.Conn, err error) {
 					wg.Done()
 					return
 				}
-				if connection.opts["target_session_attrs"] == "read_write" {
+				if connection.opts["target_session_attrs"] == "read-write" {
 					// check target session attribute
-					rows, err := connection.Query("SHOW transaction_read_only;", nil)
+					rows, err := connection.Query("SHOW transaction_read_only", nil)
 					if err != nil {
 						errs = append(errs, err)
 						wg.Done()
@@ -329,18 +329,17 @@ func DialOpen(d Dialer, dsn string) (_ driver.Conn, err error) {
 						_ = connection.Close()
 						return
 					}
+					_ = rows.Next(v)
 				}
 				lock.Lock()
 				if connected {
 					_ = connection.Close()
-					fmt.Println("already connected")
 				} else {
 					resultCh <- connection
 					connected = true
-					fmt.Println("connected")
 				}
 				lock.Unlock()
-			}()
+			}(singleDsn)
 		}
 		select {
 		case <-errCh:

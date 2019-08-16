@@ -1,7 +1,6 @@
 package pq
 
 import (
-	"database/sql"
 	"testing"
 )
 
@@ -101,13 +100,4 @@ func TestSplitMultiHostURL2(t *testing.T) {
 	if urls[1] != "postgres://username:top%20secret@host2:5433/database?attr=true" {
 		t.Fatalf("unexpected result from ParseURL:\n+ %s\n-", urls)
 	}
-}
-
-func TestConnMultiHost(t *testing.T) {
-	url := "postgres://localhost,localhost/postgres?target_session_attrs=read_write&sslmode=disable"
-	conn, err := sql.Open("postgres", url)
-	t.Log(conn)
-	t.Log(err)
-	_, err = conn.Query("select 1")
-	t.Log(err)
 }
